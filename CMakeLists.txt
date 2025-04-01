@@ -78,8 +78,7 @@ target_include_directories(rtcast PUBLIC
 	$<INSTALL_INTERFACE:include>)
 target_include_directories(rtcast PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast)
-target_include_directories(rtcast PRIVATE
-	${LIBCAMERA_INCLUDE_DIRS}
+target_include_directories(rtcast PUBLIC
 	${AV_INCLUDE_DIRS})
 target_link_libraries(rtcast PRIVATE
 	LibDataChannel::LibDataChannel
