@@ -91,8 +91,8 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 		throw std::runtime_error("Failed to allocate samples array");
 
 	try {
-		ret = swr_convert(mSwrContext.get(), samples, frame->nb_samples,
-		                  static_cast<uint8_t **>(frame->extended_data), frame->nb_samples);
+		auto in = const_cast<const uint8_t **>(static_cast<uint8_t **>(frame->extended_data));
+		ret = swr_convert(mSwrContext.get(), samples, frame->nb_samples, in, frame->nb_samples);
 		if (ret < 0)
 			throw std::runtime_error("Audio samples conversion failed");
 
