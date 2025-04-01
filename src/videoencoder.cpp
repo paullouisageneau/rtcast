@@ -187,7 +187,7 @@ void VideoEncoder::push(InputFrame input) {
 	frame->height = input.height;
 	std::copy(input.linesize, input.linesize + 3, frame->linesize);
 
-	av_image_fill_pointers(frame->data, AV_PIX_FMT_YUV420P, frame->height,
+	av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
 	                       static_cast<uint8_t *>(data), frame->linesize);
 
 	push(std::move(frame));
