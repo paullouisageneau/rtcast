@@ -14,7 +14,6 @@
 
 extern "C" {
 #include <libavutil/imgutils.h>
-#include <libdrm/drm_fourcc.h>
 #include <libswscale/swscale.h>
 }
 
