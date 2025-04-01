@@ -8,6 +8,11 @@
 
 #include "drmvideoencoder.hpp"
 
+extern "C" {
+#include <libavutil/hwcontext_drm.h>
+#include <libdrm/drm_fourcc.h>
+}
+
 #include <iostream>
 #include <stdexcept>
 
