@@ -280,37 +280,41 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 
 		VideoEncoder::InputFrame frame = {};
 		frame.ts = std::chrono::microseconds(metadata.timestamp / 1000);
-		frame.fd = plane.fd.get();
-		frame.size = plane.length;
 		frame.width = streamConfig.size.width;
 		frame.height = streamConfig.size.height;
 		frame.finished = std::move(finished);
+		for (const auto &plane : buffer->planes()) {
+			VideoEncoder::Plane p;
+			p.fd = plane.fd.get();
+			p.size = plane.length;
+			frame.planes.push_back(std::move(p));
+        }
 
 		int stride = streamConfig.stride;
 		switch (streamConfig.pixelFormat) {
 		case libcamera::formats::YUV420:
 			frame.pixelFormat = AV_PIX_FMT_YUV420P;
-			frame.linesize[0] = stride;
-			frame.linesize[1] = stride / 2;
-			frame.linesize[2] = stride / 2;
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride / 2);
+			frame.linesize.push_back(stride / 2);
 			break;
 		case libcamera::formats::YUV422:
 			frame.pixelFormat = AV_PIX_FMT_YUV422P;
-			frame.linesize[0] = stride;
-			frame.linesize[1] = stride / 2;
-			frame.linesize[2] = stride / 2;
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride / 2);
+			frame.linesize.push_back(stride / 2);
 			break;
 		case libcamera::formats::YUV444:
 			frame.pixelFormat = AV_PIX_FMT_YUV444P;
-			frame.linesize[0] = stride;
-			frame.linesize[1] = stride;
-			frame.linesize[2] = stride;
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride);
 			break;
 		case libcamera::formats::YUYV:
 			frame.pixelFormat = AV_PIX_FMT_YUYV422;
-			frame.linesize[0] = stride;
-			frame.linesize[1] = stride;
-			frame.linesize[2] = stride;
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride);
+			frame.linesize.push_back(stride);
 			break;
 		default:
 			throw std::runtime_error("Unknown pixel format: " +
