@@ -42,15 +42,19 @@ public:
 
 	using finished_callback_t = std::function<void()>;
 
-	struct InputFrame {
-		std::chrono::microseconds ts;
-		AVPixelFormat pixelFormat = AV_PIX_FMT_YUV420P;
+	struct Plane {
 		int fd = -1;
 		void *data = nullptr;
 		size_t size = 0;
+	};
+
+	struct InputFrame {
+		std::chrono::microseconds ts;
+		AVPixelFormat pixelFormat = AV_PIX_FMT_YUV420P;
 		int width = 0;
 		int height = 0;
-		int linesize[3] = {0, 0, 0};
+		std::vector<Plane> planes;
+		std::vector<int> linesize;
 		finished_callback_t finished;
 	};
 

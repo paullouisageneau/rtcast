@@ -152,43 +152,54 @@ void VideoEncoder::push(shared_ptr<AVFrame> frame) {
 }
 
 void VideoEncoder::push(InputFrame input) {
-	shared_ptr<AVFrame> frame;
-	void *data;
-	if (input.fd >= 0) {
+	if (input.planes.empty())
+		throw std::logic_error("Input frame has no planes");
+
+	std::vector<Plane> mappedPlanes;
+	for (auto &plane : input.planes) {
+		if (plane.fd >= 0) {
 #ifdef _WIN32
-		throw std::logic_error("Memory mapping is not implemented on Windows");
+			throw std::logic_error("Memory mapping is not implemented on Windows");
 #else
-		size_t size = input.size;
-		data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, input.fd, 0);
-		frame = shared_ptr<AVFrame>(av_frame_alloc(),
-		                            [finished = std::move(input.finished), data, size](AVFrame *p) {
-			                            av_frame_free(&p);
-			                            munmap(data, size);
-			                            if (finished)
-				                            finished();
-		                            });
+			plane.data = ::mmap(NULL, plane.size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd, 0);
+			mappedPlanes.push_back(plane);
 #endif
-	} else {
-		data = input.data;
-		frame = shared_ptr<AVFrame>(av_frame_alloc(),
-		                            [finished = std::move(input.finished)](AVFrame *p) {
-			                            av_frame_free(&p);
-			                            if (finished)
-				                            finished();
-		                            });
+		}
 	}
 
+	auto frame = shared_ptr<AVFrame>(
+	    av_frame_alloc(), //
+	    [finished = std::move(input.finished), mappedPlanes = std::move(mappedPlanes)](AVFrame *p) {
+		    av_frame_free(&p);
+		    for (const auto &plane : mappedPlanes)
+			    ::munmap(plane.data, plane.size);
+		    if (finished)
+			    finished();
+	    });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
+
+	int nbPlanes = std::min(int(input.planes.size()), AV_NUM_DATA_POINTERS);
 
 	frame->pts = input.ts.count();
 	frame->format = input.pixelFormat;
 	frame->width = input.width;
 	frame->height = input.height;
-	std::copy(input.linesize, input.linesize + 3, frame->linesize);
 
-	av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
-	                       static_cast<uint8_t *>(data), frame->linesize);
+	for (int i = 0; i < nbPlanes; ++i) {
+		if (i < int(input.linesize.size()))
+			frame->linesize[i] = input.linesize[i];
+		else
+			frame->linesize[i] = i > 0 ? frame->linesize[i-1] : 0;
+	}
+
+	if(input.planes.size() == 1) {
+		av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
+	                       static_cast<uint8_t *>(input.planes[0].data), frame->linesize);
+	} else {
+		for (int i = 0; i < nbPlanes; ++i)
+			frame->data[i] = static_cast<uint8_t *>(input.planes[i].data);
+	}
 
 	push(std::move(frame));
 }
