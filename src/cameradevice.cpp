@@ -12,7 +12,13 @@
 
 #include <libcamera/libcamera.h>
 
+#include <fcntl.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-heap.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <iostream>
 #include <stdexcept>
@@ -26,7 +32,7 @@ shared_ptr<AVPacket> make_packet(int fd, size_t len) {
 	if (!packet)
 		return nullptr;
 
-	void *mem = mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
+	void *mem = ::mmap(NULL, len, PROT_READ, MAP_SHARED, fd, 0);
 	if (mem == MAP_FAILED) {
 		av_packet_free(&packet);
 		return nullptr;
@@ -36,7 +42,7 @@ shared_ptr<AVPacket> make_packet(int fd, size_t len) {
 	packet->size = static_cast<int>(len);
 
 	return shared_ptr<AVPacket>(packet, [mem, len](AVPacket *packet) {
-		munmap(mem, len);
+		::munmap(mem, len);
 		av_packet_free(&packet);
 	});
 }
@@ -165,29 +171,28 @@ CameraDevice::CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder)
 		mEncoder->setColorSettings(std::move(settings));
 	}
 
-	mAllocator = std::make_unique<libcamera::FrameBufferAllocator>(mCamera);
+	libcamera::Stream *stream = streamConfig.stream();
 
-	for (libcamera::StreamConfiguration &cfg : *mConfig) {
-		int ret = mAllocator->allocate(cfg.stream());
-		if (ret < 0)
-			throw std::runtime_error("Failed to allocate buffers");
-
-		size_t allocated = mAllocator->buffers(cfg.stream()).size();
-		std::cout << "Allocated " << allocated << " buffers for stream" << std::endl;
+	const std::vector<std::unique_ptr<libcamera::FrameBuffer>> *buffers = nullptr;
+	try {
+		mDmaAllocator = std::make_unique<DmaFrameBufferAllocator>();
+		mDmaAllocator->allocate(stream);
+		buffers = &mDmaAllocator->buffers(stream);
+	} catch (const std::exception &e) {
+		std::cout << "DMA allocation is not possible: " << e.what() << std::endl;
+		std::cout << "Falling back to default allocator" << std::endl;
+		mAllocator = std::make_unique<libcamera::FrameBufferAllocator>(mCamera);
+		if (mAllocator->allocate(stream) < 0)
+			throw std::runtime_error("Failed to allocate frame buffers");
+		buffers = &mAllocator->buffers(stream);
 	}
 
-	libcamera::Stream *stream = streamConfig.stream();
-	const std::vector<std::unique_ptr<libcamera::FrameBuffer>> &buffers =
-	    mAllocator->buffers(stream);
-
-	for (unsigned int i = 0; i < buffers.size(); ++i) {
+	for (const auto &buffer : *buffers) {
 		std::unique_ptr<libcamera::Request> request = mCamera->createRequest();
 		if (!request)
 			throw std::runtime_error("Failed to create request");
 
-		const std::unique_ptr<libcamera::FrameBuffer> &buffer = buffers[i];
-		int ret = request->addBuffer(stream, buffer.get());
-		if (ret < 0)
+		if (request->addBuffer(stream, buffer.get()) < 0)
 			throw std::runtime_error("Failed to set buffer for request");
 
 		mRequests.push_back(std::move(request));
@@ -203,15 +208,15 @@ CameraDevice::~CameraDevice() {}
 void CameraDevice::initInputCodec(AVCodecID codecId) {
 	const AVCodec *inputCodec = avcodec_find_decoder(codecId);
 	if (!inputCodec)
-		throw std::runtime_error("Unable to find codec for input video stream");
+		throw std::runtime_error("Failed to find codec for input video stream");
 
 	mInputCodecContext = unique_ptr_deleter<AVCodecContext>(
 	    avcodec_alloc_context3(inputCodec), [](AVCodecContext *p) { avcodec_free_context(&p); });
 	if (!mInputCodecContext)
-		throw std::runtime_error("Unable to allocate codec context for input video stream");
+		throw std::runtime_error("Failed to allocate codec context for input video stream");
 
 	if (avcodec_open2(mInputCodecContext.get(), inputCodec, nullptr) < 0)
-		throw std::runtime_error("Unable to open codec for input video stream");
+		throw std::runtime_error("Failed to open codec for input video stream");
 }
 
 void CameraDevice::start() {
@@ -241,7 +246,7 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 		std::cout << " seq: " << metadata.sequence << " bytesused: ";
 
 		unsigned int nplane = 0;
-		for (const libcamera::FrameMetadata::Plane &plane : metadata.planes()) {
+		for (const auto &plane : metadata.planes()) {
 			std::cout << plane.bytesused;
 			if (++nplane < metadata.planes().size())
 				std::cout << "/";
@@ -254,9 +259,8 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 			mCamera->queueRequest(request);
 		};
 
-		const libcamera::FrameBuffer::Plane &plane = buffer->planes().front();
-
 		if (mInputCodecContext) {
+			const auto &plane = buffer->planes().front();
 			auto packet = make_packet(plane.fd.get(), plane.length);
 			packet->time_base = {1, 1000000}; // usec
 			packet->pts = metadata.timestamp / 1000;
@@ -288,7 +292,7 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 			p.fd = plane.fd.get();
 			p.size = plane.length;
 			frame.planes.push_back(std::move(p));
-        }
+		}
 
 		int stride = streamConfig.stride;
 		switch (streamConfig.pixelFormat) {
@@ -323,6 +327,59 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 
 		mEncoder->push(std::move(frame));
 	}
+}
+
+CameraDevice::DmaFrameBufferAllocator::DmaFrameBufferAllocator() {
+	static const std::vector<string> DmaHeapNames{
+	    // In order of preference
+	    "/dev/dma_heap/vidbuf_cached",
+	    "/dev/dma_heap/linux,cma",
+	    "/dev/dma_heap/system",
+	};
+
+	for (const auto &name : DmaHeapNames)
+		if(mDmaHeap = ::open(name.c_str(), O_RDWR | O_CLOEXEC, 0), mDmaHeap >= 0)
+			break;
+
+	if (mDmaHeap < 0)
+		throw std::runtime_error("Failed to open DMA heap");
+}
+
+CameraDevice::DmaFrameBufferAllocator::~DmaFrameBufferAllocator() {}
+
+void CameraDevice::DmaFrameBufferAllocator::allocate(libcamera::Stream *stream) {
+	const auto &config = stream->configuration();
+	for (unsigned int i = 0; i < config.bufferCount; i++) {
+		struct dma_heap_allocation_data allocation = {};
+		allocation.len = config.frameSize;
+		allocation.fd_flags = O_CLOEXEC | O_RDWR;
+		if (::ioctl(mDmaHeap, DMA_HEAP_IOCTL_ALLOC, &allocation) < 0)
+			throw std::runtime_error("DMA allocation failed");
+
+		string name("rtcast" + std::to_string(i));
+		::ioctl(allocation.fd, DMA_BUF_SET_NAME, name.c_str());
+
+		std::vector<FrameBuffer::Plane> planes(1);
+		planes[0].fd = libcamera::SharedFD(allocation.fd);
+		planes[0].offset = 0;
+		planes[0].length = config.frameSize;
+		mBuffers[stream].push_back(std::make_unique<FrameBuffer>(std::move(planes)));
+	}
+}
+
+void CameraDevice::DmaFrameBufferAllocator::free(libcamera::Stream *stream) {
+	mBuffers.erase(stream);
+}
+
+bool CameraDevice::DmaFrameBufferAllocator::allocated() const { return !mBuffers.empty(); }
+
+const std::vector<std::unique_ptr<CameraDevice::DmaFrameBufferAllocator::FrameBuffer>> &
+CameraDevice::DmaFrameBufferAllocator::buffers(libcamera::Stream *stream) const {
+	auto it = mBuffers.find(stream);
+	if (it == mBuffers.end())
+		throw std::logic_error("Buffers are not allocated for stream");
+
+	return it->second;
 }
 
 } // namespace rtcast

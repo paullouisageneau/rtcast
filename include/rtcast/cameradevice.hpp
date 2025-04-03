@@ -19,6 +19,7 @@ extern "C" {
 
 #include <chrono>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,6 +32,7 @@ class CameraConfiguration;
 class FrameBuffer;
 class FrameBufferAllocator;
 class Request;
+class Stream;
 
 } // namespace libcamera
 
@@ -47,6 +49,24 @@ public:
 	void stop();
 
 private:
+	class DmaFrameBufferAllocator final {
+	public:
+		using FrameBuffer = libcamera::FrameBuffer;
+
+		DmaFrameBufferAllocator();
+		~DmaFrameBufferAllocator();
+
+		void allocate(libcamera::Stream *stream);
+		void free(libcamera::Stream *stream);
+		bool allocated() const;
+
+		const std::vector<std::unique_ptr<FrameBuffer>> &buffers(libcamera::Stream *stream) const;
+
+	private:
+		std::map<libcamera::Stream *, std::vector<unique_ptr<FrameBuffer>>> mBuffers;
+		int mDmaHeap = -1;
+	};
+
 	static std::once_flag OnceFlag;
 	static std::unique_ptr<libcamera::CameraManager> CameraManager;
 
@@ -55,11 +75,10 @@ private:
 	shared_ptr<VideoEncoder> mEncoder;
 
 	shared_ptr<libcamera::Camera> mCamera;
-	shared_ptr<libcamera::FrameBufferAllocator> mAllocator;
 	unique_ptr<libcamera::CameraConfiguration> mConfig;
-
-	std::vector<std::unique_ptr<libcamera::FrameBuffer>> mBuffers;
 	std::vector<std::unique_ptr<libcamera::Request>> mRequests;
+	shared_ptr<DmaFrameBufferAllocator> mDmaAllocator;
+	shared_ptr<libcamera::FrameBufferAllocator> mAllocator;
 
 	unique_ptr_deleter<AVCodecContext> mInputCodecContext;
 };
