@@ -56,6 +56,9 @@ void DrmVideoEncoder::push(InputFrame input) {
 	// planes are mapped to objects
 	desc->nb_objects = std::min(int(input.planes.size()), int(AV_DRM_MAX_PLANES));
 	for (int i = 0; i < desc->nb_objects; ++i) {
+		if (input.planes[i].fd < 0)
+			throw std::logic_error("Plane for DRM encoder has no file descriptor");
+
 		desc->objects[i].fd = input.planes[i].fd;
 		desc->objects[i].size = input.planes[i].size;
 		desc->objects[i].format_modifier = DRM_FORMAT_MOD_INVALID;
