@@ -14,6 +14,7 @@
 
 // Video
 #include "cameradevice.hpp"
+#include "drmvideoencoder.hpp"
 #include "videodevice.hpp"
 #include "videoencoder.hpp"
 

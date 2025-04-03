@@ -94,7 +94,7 @@ void DrmVideoEncoder::push(InputFrame input) {
 		throw std::logic_error("Unexpected number of planes for YUV420");
 	}
 
-	push(std::move(frame));
+	Encoder::push(std::move(frame));
 }
 
 } // namespace rtcast
