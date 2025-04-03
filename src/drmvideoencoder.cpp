@@ -45,35 +45,29 @@ void DrmVideoEncoder::push(InputFrame input) {
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
-	int nbPlanes = std::min(int(input.planes.size()), AV_NUM_DATA_POINTERS);
-
 	frame->data[0] = reinterpret_cast<uint8_t *>(desc.get());
 	frame->pts = input.ts.count();
 	frame->format = input.pixelFormat;
 	frame->width = input.width;
 	frame->height = input.height;
-	for (int i = 0; i < nbPlanes; ++i) {
-		if (i < int(input.linesize.size()))
-			frame->linesize[i] = input.linesize[i];
-		else
-			frame->linesize[i] = i > 0 ? frame->linesize[i - 1] : 0;
-	}
+	for (int i = 0; i < std::min(int(input.linesize.size()), AV_NUM_DATA_POINTERS); ++i)
+		frame->linesize[i] = input.linesize[i];
 
 	// planes are mapped to objects
-	desc->nb_objects = nbPlanes;
-	for (int i = 0; i < std::min(nbPlanes, int(AV_DRM_MAX_PLANES)); ++i) {
+	desc->nb_objects = std::min(int(input.planes.size()), int(AV_DRM_MAX_PLANES));
+	for (int i = 0; i < desc->nb_objects; ++i) {
 		desc->objects[i].fd = input.planes[i].fd;
 		desc->objects[i].size = input.planes[i].size;
 		desc->objects[i].format_modifier = DRM_FORMAT_MOD_INVALID;
 	}
 
 	// actual planes
-	const auto height = input.height;
-	const auto &linesize = input.linesize;
+	const auto height = frame->height;
+	const auto &linesize = frame->linesize;
 	desc->nb_layers = 1;
 	desc->layers[0].format = DRM_FORMAT_YUV420;
 	desc->layers[0].nb_planes = 3;
-	switch (nbPlanes) {
+	switch (desc->nb_objects) {
 	case 1:
 		desc->layers[0].planes[0].object_index = 0;
 		desc->layers[0].planes[0].offset = 0;

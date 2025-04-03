@@ -179,25 +179,18 @@ void VideoEncoder::push(InputFrame input) {
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
-	int nbPlanes = std::min(int(input.planes.size()), AV_NUM_DATA_POINTERS);
-
 	frame->pts = input.ts.count();
 	frame->format = input.pixelFormat;
 	frame->width = input.width;
 	frame->height = input.height;
-
-	for (int i = 0; i < nbPlanes; ++i) {
-		if (i < int(input.linesize.size()))
-			frame->linesize[i] = input.linesize[i];
-		else
-			frame->linesize[i] = i > 0 ? frame->linesize[i-1] : 0;
-	}
+	for (int i = 0; i < std::min(int(input.linesize.size()), AV_NUM_DATA_POINTERS); ++i)
+		frame->linesize[i] = input.linesize[i];
 
 	if(input.planes.size() == 1) {
 		av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
 	                       static_cast<uint8_t *>(input.planes[0].data), frame->linesize);
 	} else {
-		for (int i = 0; i < nbPlanes; ++i)
+		for (int i = 0; i < std::min(int(input.planes.size()), AV_NUM_DATA_POINTERS); ++i)
 			frame->data[i] = static_cast<uint8_t *>(input.planes[i].data);
 	}
 
