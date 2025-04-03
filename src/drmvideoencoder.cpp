@@ -37,7 +37,7 @@ void DrmVideoEncoder::push(InputFrame input) {
 
 	auto desc = std::make_shared<AVDRMFrameDescriptor>();
 	auto frame =
-	    shared_ptr<AVFrame>(av_frame_alloc(), [finished = std::move(input.finished)](AVFrame *p) {
+	    shared_ptr<AVFrame>(av_frame_alloc(), [desc, finished = std::move(input.finished)](AVFrame *p) {
 		    av_frame_free(&p);
 		    if (finished)
 			    finished();
@@ -47,7 +47,7 @@ void DrmVideoEncoder::push(InputFrame input) {
 
 	frame->data[0] = reinterpret_cast<uint8_t *>(desc.get());
 	frame->pts = input.ts.count();
-	frame->format = input.pixelFormat;
+	frame->format = mCodecContext->pix_fmt;
 	frame->width = input.width;
 	frame->height = input.height;
 	for (int i = 0; i < std::min(int(input.linesize.size()), AV_NUM_DATA_POINTERS); ++i)
