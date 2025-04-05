@@ -12,6 +12,14 @@
 
 namespace rtcast {
 
+extern "C" {
+
+static void free_buffer_shared_ptr(void *opaque, [[maybe_unused]] uint8_t *data) {
+	auto ptr = reinterpret_cast<shared_ptr<void> *>(opaque);
+	delete ptr;
+}
+}
+
 AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
     : Encoder(std::move(codecName)), mEndpoint(std::move(endpoint)) {
 
@@ -133,13 +141,7 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 }
 
 void AudioEncoder::push(InputFrame input) {
-	auto frame =
-	    shared_ptr<AVFrame>(av_frame_alloc(), [finished = std::move(input.finished)](AVFrame *p) {
-		    av_frame_free(&p);
-		    if (finished)
-			    finished();
-	    });
-
+	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
@@ -147,9 +149,26 @@ void AudioEncoder::push(InputFrame input) {
 	frame->format = input.format;
 	frame->sample_rate = input.sampleRate;
 	frame->nb_samples = input.nbSamples;
-	frame->data[0] = static_cast<uint8_t *>(input.data);
 	av_channel_layout_default(&frame->ch_layout, input.nbChannels);
 
+	struct FinishedWrapper {
+		std::function<void()> finished;
+		~FinishedWrapper() {
+			if (finished)
+				finished();
+		}
+	};
+	auto finishedWrapper = std::make_shared<FinishedWrapper>();
+
+	frame->buf[0] =
+	    av_buffer_create(reinterpret_cast<uint8_t *>(input.data), input.size,
+	                     free_buffer_shared_ptr, new shared_ptr<void>(finishedWrapper), 0);
+	if(!frame->buf[0])
+		throw std::runtime_error("Failed to create AVBuffer");
+
+	frame->data[0] = frame->buf[0]->data;
+
+	finishedWrapper->finished = std::move(input.finished);
 	push(std::move(frame));
 }
 

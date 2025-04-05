@@ -18,6 +18,15 @@ extern "C" {
 
 namespace rtcast {
 
+extern "C" {
+static void free_buffer_release_func(void *opaque, [[maybe_unused]] uint8_t *data) {
+	auto func = reinterpret_cast<std::function<void()> *>(opaque);
+	if (*func)
+		(*func)();
+	delete func;
+}
+}
+
 DrmVideoEncoder::DrmVideoEncoder(string codecName, shared_ptr<Endpoint> endpoint)
     : VideoEncoder(std::move(codecName), std::move(endpoint)) {
 
@@ -35,17 +44,29 @@ void DrmVideoEncoder::push(InputFrame input) {
 	if (input.pixelFormat != AV_PIX_FMT_YUV420P)
 		throw std::logic_error("Unexpected pixel format for DRM video encoder");
 
-	auto desc = std::make_shared<AVDRMFrameDescriptor>();
-	auto frame =
-	    shared_ptr<AVFrame>(av_frame_alloc(), [desc, finished = std::move(input.finished)](AVFrame *p) {
-		    av_frame_free(&p);
-		    if (finished)
-			    finished();
-	    });
+	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
-	frame->data[0] = reinterpret_cast<uint8_t *>(desc.get());
+	struct FinishedWrapper {
+		std::function<void()> finished;
+		~FinishedWrapper() {
+			if (finished)
+				finished();
+		}
+	};
+	auto finishedWrapper = std::make_shared<FinishedWrapper>();
+
+	auto desc = new AVDRMFrameDescriptor;
+	auto release = new std::function<void()>([desc, finishedWrapper]() { delete desc; });
+	frame->buf[0] =
+	    av_buffer_create(reinterpret_cast<uint8_t *>(desc), sizeof(AVDRMFrameDescriptor),
+	                     free_buffer_release_func, release, 0);
+	if(!frame->buf[0])
+		throw std::runtime_error("Failed to create AVBuffer");
+
+	frame->data[0] = frame->buf[0]->data;
+
 	frame->pts = input.ts.count();
 	frame->format = mCodecContext->pix_fmt;
 	frame->width = input.width;
@@ -79,7 +100,7 @@ void DrmVideoEncoder::push(InputFrame input) {
 		desc->layers[0].planes[1].offset = linesize[0] * height;
 		desc->layers[0].planes[1].pitch = linesize[1];
 		desc->layers[0].planes[2].object_index = 0;
-		desc->layers[0].planes[2].offset = (linesize[0] + linesize[1]) * height;
+		desc->layers[0].planes[2].offset = linesize[0] * height + linesize[1] * height / 2;
 		desc->layers[0].planes[2].pitch = linesize[2];
 		break;
 	case 3:
@@ -97,6 +118,7 @@ void DrmVideoEncoder::push(InputFrame input) {
 		throw std::logic_error("Unexpected number of planes for YUV420");
 	}
 
+	finishedWrapper->finished = std::move(input.finished);
 	Encoder::push(std::move(frame));
 }
 

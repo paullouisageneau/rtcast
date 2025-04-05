@@ -239,26 +239,31 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 	if (request->status() == libcamera::Request::RequestCancelled)
 		return;
 
-	for (auto bufferPair : request->buffers()) {
-		libcamera::FrameBuffer *buffer = bufferPair.second;
-		const libcamera::FrameMetadata &metadata = buffer->metadata();
+	const auto &streamConfig = mConfig->at(0);
 
-		std::cout << " seq: " << metadata.sequence << " bytesused: ";
+	const auto &buffers = request->buffers();
+	auto it = buffers.find(streamConfig.stream());
+	if (it == buffers.end())
+		return;
 
-		unsigned int nplane = 0;
-		for (const auto &plane : metadata.planes()) {
-			std::cout << plane.bytesused;
-			if (++nplane < metadata.planes().size())
-				std::cout << "/";
-		}
+	libcamera::FrameBuffer *buffer = it->second;
+	const libcamera::FrameMetadata &metadata = buffer->metadata();
 
-		std::cout << std::endl;
+	std::cout << " seq: " << metadata.sequence << " bytesused: ";
+	unsigned int nplane = 0;
+	for (const auto &plane : metadata.planes()) {
+		std::cout << plane.bytesused;
+		if (++nplane < metadata.planes().size())
+			std::cout << "/";
+	}
+	std::cout << std::endl;
 
-		auto finished = [this, request]() {
-			request->reuse(libcamera::Request::ReuseBuffers);
-			mCamera->queueRequest(request);
-		};
+	auto finished = [this, request]() {
+		request->reuse(libcamera::Request::ReuseBuffers);
+		mCamera->queueRequest(request);
+	};
 
+	try {
 		if (mInputCodecContext) {
 			const auto &plane = buffer->planes().front();
 			auto packet = make_packet(plane.fd.get(), plane.length);
@@ -267,26 +272,22 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 			if (avcodec_send_packet(mInputCodecContext.get(), packet.get()) < 0)
 				throw std::runtime_error("Error sending frame for decoding");
 
-			auto frame = shared_ptr<AVFrame>(av_frame_alloc(), //
-			                                 [finished = std::move(finished)](AVFrame *p) {
-				                                 av_frame_free(&p);
-				                                 finished();
-			                                 });
+			auto frame =
+			    shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 
 			if (avcodec_receive_frame(mInputCodecContext.get(), frame.get()) < 0)
 				throw std::runtime_error("Error getting decoded frame");
 
 			mEncoder->push(std::move(frame));
+			finished();
 			return;
 		}
-
-		const auto &streamConfig = mConfig->at(0);
 
 		VideoEncoder::InputFrame frame = {};
 		frame.ts = std::chrono::microseconds(metadata.timestamp / 1000);
 		frame.width = streamConfig.size.width;
 		frame.height = streamConfig.size.height;
-		frame.finished = std::move(finished);
+		frame.finished = finished;
 		for (const auto &plane : buffer->planes()) {
 			VideoEncoder::Plane p;
 			p.fd = plane.fd.get();
@@ -326,6 +327,10 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 		}
 
 		mEncoder->push(std::move(frame));
+
+	} catch (const std::exception &e) {
+		std::cerr << "Failed to push video frame: " << e.what() << std::endl;
+		finished();
 	}
 }
 
@@ -338,7 +343,7 @@ CameraDevice::DmaFrameBufferAllocator::DmaFrameBufferAllocator() {
 	};
 
 	for (const auto &name : DmaHeapNames)
-		if(mDmaHeap = ::open(name.c_str(), O_RDWR | O_CLOEXEC, 0), mDmaHeap >= 0)
+		if (mDmaHeap = ::open(name.c_str(), O_RDWR | O_CLOEXEC, 0), mDmaHeap >= 0)
 			break;
 
 	if (mDmaHeap < 0)

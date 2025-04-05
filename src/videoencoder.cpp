@@ -18,6 +18,22 @@
 
 namespace rtcast {
 
+extern "C" {
+
+static void free_buffer_release_func(void *opaque, [[maybe_unused]] uint8_t *data) {
+	auto func = reinterpret_cast<std::function<void()> *>(opaque);
+	if (*func)
+		(*func)();
+	delete func;
+}
+
+static void free_buffer_shared_ptr(void *opaque, [[maybe_unused]] uint8_t *data) {
+	auto ptr = reinterpret_cast<shared_ptr<void> *>(opaque);
+	delete ptr;
+}
+
+}
+
 VideoEncoder::VideoEncoder(string codecName, std::shared_ptr<Endpoint> endpoint)
     : Encoder(std::move(codecName)), mEndpoint(std::move(endpoint)) {
 
@@ -155,27 +171,7 @@ void VideoEncoder::push(InputFrame input) {
 	if (input.planes.empty())
 		throw std::logic_error("Input frame has no planes");
 
-	std::vector<Plane> mappedPlanes;
-	for (auto &plane : input.planes) {
-		if (plane.fd >= 0) {
-#ifdef _WIN32
-			throw std::logic_error("Memory mapping is not implemented on Windows");
-#else
-			plane.data = ::mmap(NULL, plane.size, PROT_READ | PROT_WRITE, MAP_SHARED, plane.fd, 0);
-			mappedPlanes.push_back(plane);
-#endif
-		}
-	}
-
-	auto frame = shared_ptr<AVFrame>(
-	    av_frame_alloc(), //
-	    [finished = std::move(input.finished), mappedPlanes = std::move(mappedPlanes)](AVFrame *p) {
-		    av_frame_free(&p);
-		    for (const auto &plane : mappedPlanes)
-			    ::munmap(plane.data, plane.size);
-		    if (finished)
-			    finished();
-	    });
+	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
@@ -186,14 +182,50 @@ void VideoEncoder::push(InputFrame input) {
 	for (int i = 0; i < std::min(int(input.linesize.size()), AV_NUM_DATA_POINTERS); ++i)
 		frame->linesize[i] = input.linesize[i];
 
-	if(input.planes.size() == 1) {
-		av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
-	                       static_cast<uint8_t *>(input.planes[0].data), frame->linesize);
-	} else {
-		for (int i = 0; i < std::min(int(input.planes.size()), AV_NUM_DATA_POINTERS); ++i)
-			frame->data[i] = static_cast<uint8_t *>(input.planes[i].data);
+	struct FinishedWrapper {
+		std::function<void()> finished;
+		~FinishedWrapper() {
+			if(finished)
+				finished();
+		}
+	};
+	auto finishedWrapper = std::make_shared<FinishedWrapper>();
+
+	int nbPlanes = std::min(int(input.planes.size()), int(AV_NUM_DATA_POINTERS));
+	for (int i = 0; i < nbPlanes; ++i) {
+		auto &plane = input.planes[i];
+		if (plane.fd >= 0) {
+#ifdef _WIN32
+			throw std::logic_error("Memory mapping is not implemented on Windows");
+#else
+			plane.data = ::mmap(NULL, plane.size, PROT_READ, MAP_SHARED, plane.fd, 0);
+			if (plane.data == MAP_FAILED)
+				throw std::runtime_error("Memory mapping failed");
+
+			auto release = new std::function<void()>(
+			    [plane, finishedWrapper]() { ::munmap(plane.data, plane.size); });
+			frame->buf[i] = av_buffer_create(reinterpret_cast<uint8_t *>(plane.data), plane.size,
+			                                 free_buffer_release_func, release, 0);
+#endif
+		} else {
+			frame->buf[i] =
+			    av_buffer_create(reinterpret_cast<uint8_t *>(plane.data), plane.size,
+			                     free_buffer_shared_ptr, new shared_ptr<void>(finishedWrapper), 0);
+		}
+
+		if(!frame->buf[i])
+			throw std::runtime_error("Failed to create AVBuffer");
 	}
 
+	if (nbPlanes == 1) {
+		av_image_fill_pointers(frame->data, input.pixelFormat, frame->height,
+		                       frame->buf[0]->data, frame->linesize);
+	} else {
+		for (int i = 0; i < nbPlanes; ++i)
+			frame->data[i] = frame->buf[i]->data;
+	}
+
+	finishedWrapper->finished = std::move(input.finished);
 	push(std::move(frame));
 }
 
