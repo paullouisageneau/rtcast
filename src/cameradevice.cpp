@@ -249,7 +249,7 @@ void CameraDevice::requestComplete(libcamera::Request *request) {
 	libcamera::FrameBuffer *buffer = it->second;
 	const libcamera::FrameMetadata &metadata = buffer->metadata();
 
-	std::cout << " seq: " << metadata.sequence << " bytesused: ";
+	std::cout << "Got camera frame, seq=" << metadata.sequence << ", size=";
 	unsigned int nplane = 0;
 	for (const auto &plane : metadata.planes()) {
 		std::cout << plane.bytesused;
