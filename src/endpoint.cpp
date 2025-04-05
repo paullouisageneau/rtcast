@@ -96,12 +96,20 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 	config.disableAutoNegotiation = true;
 	client->pc = std::make_shared<rtc::PeerConnection>(std::move(config));
 
-	client->pc->onStateChange([this, id](rtc::PeerConnection::State state) {
+	client->pc->onStateChange([this, id, wclient](rtc::PeerConnection::State state) {
 		std::cout << "State: " << state << std::endl;
-		if (state == rtc::PeerConnection::State::Disconnected ||
-		    state == rtc::PeerConnection::State::Failed ||
-		    state == rtc::PeerConnection::State::Closed) {
+		using State = rtc::PeerConnection::State;
+		switch (state) {
+		case State::Disconnected:
+		case State::Failed:
+			if (auto client = wclient.lock())
+				client->pc->close();
+			break;
+		case State::Closed:
 			remove(id);
+			break;
+		default:
+			break;
 		}
 	});
 
