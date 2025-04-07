@@ -55,6 +55,11 @@ public:
 
 	void broadcastVideo(const byte *data, size_t size, std::chrono::microseconds timestamp);
 	void broadcastAudio(const byte *data, size_t size, uint32_t timestamp);
+	void broadcastMessage(string message);
+	void sendMessage(int id, string message);
+
+	using message_callback = std::function<void(int id, string message)>;
+	void onMessage(message_callback callback);
 
 private:
 	int connect(shared_ptr<rtc::WebSocket> ws);
@@ -75,6 +80,9 @@ private:
 	std::shared_mutex mMutex;
 	std::atomic<int> mNextClientId;
 	std::map<int, shared_ptr<Client>> mClients;
+
+	std::mutex mMessageCallbackMutex;
+	message_callback mMessageCallback;
 };
 
 } // namespace rtcast

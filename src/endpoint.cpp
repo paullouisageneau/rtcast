@@ -36,7 +36,9 @@ Endpoint::Endpoint(uint16_t port) {
 	mWebSocketServer->onClient(std::bind(&Endpoint::connect, this, _1));
 }
 
-Endpoint::~Endpoint() {}
+Endpoint::~Endpoint() {
+	// TODO: close everything
+}
 
 void Endpoint::setVideo(VideoCodec codec) {
 	if (mVideoCodec != VideoCodec::None)
@@ -63,7 +65,7 @@ void Endpoint::broadcastVideo(const byte *data, size_t size, std::chrono::micros
 				client->video->sendFrame(data, size, std::chrono::duration<double>(timestamp));
 
 		} catch (const std::exception &e) {
-			std::cout << "Failed to send video: " << e.what() << std::endl;
+			std::cerr << "Failed to send video: " << e.what() << std::endl;
 			client->pc->close();
 		}
 	}
@@ -80,10 +82,44 @@ void Endpoint::broadcastAudio(const byte *data, size_t size, uint32_t timestamp)
 				client->audio->sendFrame(data, size, timestamp);
 
 		} catch (const std::exception &e) {
-			std::cout << "Failed to send audio: " << e.what() << std::endl;
+			std::cerr << "Failed to send audio: " << e.what() << std::endl;
 			client->pc->close();
 		}
 	}
+}
+
+void Endpoint::broadcastMessage(string message) {
+	std::shared_lock lock(mMutex);
+	for (const auto &[id, client] : mClients) {
+		try {
+			if (client->dc && client->dc->isOpen())
+				client->dc->send(message);
+
+		} catch (const std::exception &e) {
+			std::cerr << "Failed to send message: " << e.what() << std::endl;
+			client->pc->close();
+		}
+	}
+}
+
+void Endpoint::sendMessage(int id, string message) {
+	std::shared_lock lock(mMutex);
+	if (auto it = mClients.find(id); it != mClients.end()) {
+		const auto &client = it->second;
+		try {
+			if (client->dc && client->dc->isOpen())
+				client->dc->send(message);
+
+		} catch (const std::exception &e) {
+			std::cerr << "Failed to send message: " << e.what() << std::endl;
+			client->pc->close();
+		}
+	}
+}
+
+void Endpoint::onMessage(message_callback callback) {
+	std::lock_guard lock(mMessageCallbackMutex);
+	mMessageCallback = std::move(callback);
 }
 
 int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
@@ -128,12 +164,14 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 		ws->send(message.dump());
 	});
 
-	client->dc = client->pc->createDataChannel("datachannel");
+	client->dc = client->pc->createDataChannel("default");
 
-	client->dc->onMessage([id](auto data) {
+	client->dc->onMessage([this, id](auto data) {
 		if (std::holds_alternative<string>(data)) {
 			auto str = std::get<string>(data);
-			std::cout << "Message from " << id << " received: " << str << std::endl;
+			std::lock_guard lock(mMessageCallbackMutex);
+			if (mMessageCallback)
+				mMessageCallback(id, std::move(str));
 		}
 	});
 

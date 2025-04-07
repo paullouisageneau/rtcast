@@ -13,6 +13,7 @@
 #include <thread>
 
 using std::make_shared;
+using std::string;
 
 int main() {
 	try {
@@ -31,6 +32,10 @@ int main() {
 #endif
 		rtcast::AudioDevice audio("default", audioEncoder);
 		audio.start();
+
+		endpoint->onMessage([](int id, string message) {
+			std::cout << "Message from " << id << ": " << message << std::endl;
+		});
 
 		std::this_thread::sleep_for(std::chrono::seconds::max());
 
