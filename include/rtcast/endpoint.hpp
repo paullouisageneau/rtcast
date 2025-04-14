@@ -10,6 +10,7 @@
 #define ENDPOINT_H
 
 #include "common.hpp"
+#include "audiodecoder.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -59,14 +60,19 @@ public:
 	void sendMessage(int id, string message);
 
 	using message_callback = std::function<void(int id, string message)>;
-	void onMessage(message_callback callback);
+	void receiveMessage(message_callback callback);
+
+	using audio_decoder_callback = std::function<shared_ptr<AudioDecoder>(int id)>;
+	void receiveAudio(audio_decoder_callback callback);
 
 private:
 	int connect(shared_ptr<rtc::WebSocket> ws);
 	void remove(int id);
 
-	VideoCodec mVideoCodec = VideoCodec::None;
-	AudioCodec mAudioCodec = AudioCodec::None;
+	std::atomic<VideoCodec> mVideoCodec = VideoCodec::None;
+	std::atomic<AudioCodec> mAudioCodec = AudioCodec::None;
+	std::atomic<bool> mReceiveVideo = false;
+	std::atomic<bool> mReceiveAudio = false;
 
 	unique_ptr<rtc::WebSocketServer> mWebSocketServer;
 
@@ -78,11 +84,14 @@ private:
 	};
 
 	std::shared_mutex mMutex;
-	std::atomic<int> mNextClientId;
+	std::atomic<int> mNextClientId = 0;
 	std::map<int, shared_ptr<Client>> mClients;
 
 	std::mutex mMessageCallbackMutex;
 	message_callback mMessageCallback;
+
+	std::mutex mDecoderCallbackMutex;
+	audio_decoder_callback mAudioDecoderCallback;
 };
 
 } // namespace rtcast

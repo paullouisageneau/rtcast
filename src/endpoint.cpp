@@ -24,6 +24,7 @@ template <class T> std::weak_ptr<T> make_weak_ptr(std::shared_ptr<T> ptr) { retu
 namespace rtcast {
 
 using namespace std::placeholders;
+using std::chrono::duration_cast;
 using json = nlohmann::json;
 
 Endpoint::Endpoint(uint16_t port) {
@@ -117,9 +118,15 @@ void Endpoint::sendMessage(int id, string message) {
 	}
 }
 
-void Endpoint::onMessage(message_callback callback) {
+void Endpoint::receiveMessage(message_callback callback) {
 	std::lock_guard lock(mMessageCallbackMutex);
 	mMessageCallback = std::move(callback);
+}
+
+void Endpoint::receiveAudio(audio_decoder_callback callback) {
+	std::lock_guard lock(mDecoderCallbackMutex);
+	mAudioDecoderCallback = std::move(callback);
+	mReceiveAudio = mAudioDecoderCallback != nullptr;
 }
 
 int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
@@ -175,7 +182,7 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 		}
 	});
 
-	ws->onOpen([this, wclient]() {
+	ws->onOpen([this, id, wclient]() {
 		std::cout << "WebSocket connected" << std::endl;
 		auto client = wclient.lock();
 		if (!client)
@@ -190,39 +197,77 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 			const string videoName = "video-stream";
 			const int videoPayloadType = 96;
 			const uint32_t videoSsrc = dist32(gen);
-			rtc::Description::Video videoDescription(videoMid);
-			videoDescription.addSSRC(videoSsrc, videoName);
 
+			const auto direction = mReceiveVideo ? rtc::Description::Direction::SendRecv
+			                                     : rtc::Description::Direction::SendOnly;
+
+			rtc::Description::Video description(videoMid, direction);
+			description.addSSRC(videoSsrc, videoName);
+
+			auto packetizerConfig = std::make_shared<rtc::RtpPacketizationConfig>(
+			    videoSsrc, videoName, videoPayloadType, rtc::H264RtpPacketizer::ClockRate);
+
+			shared_ptr<rtc::MediaHandler> packetizer;
 			switch (mVideoCodec) {
 			case VideoCodec::H264:
-				videoDescription.addH264Codec(videoPayloadType);
+				description.addH264Codec(videoPayloadType);
+				packetizer = std::make_shared<rtc::H264RtpPacketizer>(
+				    rtc::H264RtpPacketizer::Separator::ShortStartSequence, packetizerConfig);
 				break;
 			case VideoCodec::H265:
-				videoDescription.addH265Codec(videoPayloadType);
+				description.addH265Codec(videoPayloadType);
+				packetizer = std::make_shared<rtc::H265RtpPacketizer>(
+				    rtc::H265RtpPacketizer::Separator::ShortStartSequence, packetizerConfig);
 				break;
 			case VideoCodec::VP8:
-				videoDescription.addVP8Codec(videoPayloadType);
+				description.addVP8Codec(videoPayloadType);
+				throw std::logic_error("VP8 packetizer not implemented");
 				break;
 			case VideoCodec::VP9:
-				videoDescription.addVP9Codec(videoPayloadType);
+				description.addVP9Codec(videoPayloadType);
+				throw std::logic_error("VP9 packetizer not implemented");
 				break;
 			case VideoCodec::AV1:
-				videoDescription.addAV1Codec(videoPayloadType);
+				description.addAV1Codec(videoPayloadType);
+				throw std::logic_error("AV1 packetizer not implemented");
 				break;
 			default:
 				throw std::logic_error("Unknown video codec");
 			}
 
-			client->video = client->pc->addTrack(videoDescription);
+			auto track = client->pc->addTrack(std::move(description));
+			track->chainMediaHandler(packetizer);
+			track->chainMediaHandler(std::make_shared<rtc::RtcpSrReporter>(packetizerConfig));
+			track->chainMediaHandler(std::make_shared<rtc::RtcpNackResponder>());
+			if (mReceiveVideo) {
+				switch (mVideoCodec) {
+				case VideoCodec::H264:
+					track->chainMediaHandler(std::make_shared<rtc::H264RtpDepacketizer>(
+					    rtc::H264RtpDepacketizer::Separator::ShortStartSequence));
+					break;
+				case VideoCodec::H265:
+					track->chainMediaHandler(std::make_shared<rtc::H265RtpDepacketizer>(
+					    rtc::H265RtpDepacketizer::Separator::ShortStartSequence));
+					break;
+				case VideoCodec::VP8:
+					throw std::logic_error("VP8 depacketizer not implemented");
+					break;
+				case VideoCodec::VP9:
+					throw std::logic_error("VP9 depacketizer not implemented");
+					break;
+				case VideoCodec::AV1:
+					throw std::logic_error("AV1 depacketizer not implemented");
+					break;
+				default:
+					throw std::logic_error("Unknown video codec");
+				}
 
-			auto videoConfig = std::make_shared<rtc::RtpPacketizationConfig>(
-			    videoSsrc, videoName, videoPayloadType, rtc::H264RtpPacketizer::ClockRate);
-			auto videoPacketizer = std::make_shared<rtc::H264RtpPacketizer>(
-			    rtc::H264RtpPacketizer::Separator::ShortStartSequence, videoConfig);
-			videoPacketizer->addToChain(std::make_shared<rtc::RtcpSrReporter>(videoConfig));
-			videoPacketizer->addToChain(std::make_shared<rtc::RtcpNackResponder>());
+				track->onFrame([](binary, rtc::FrameInfo) {
+					// TODO
+				});
+			}
 
-			client->video->setMediaHandler(videoPacketizer);
+			client->video = std::move(track);
 		}
 
 		if (mAudioCodec != AudioCodec::None) {
@@ -230,35 +275,60 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 			const string audioName = "audio-stream";
 			const int audioPayloadType = 97;
 			const uint32_t audioSsrc = dist32(gen);
-			rtc::Description::Audio audioDescription(audioMid);
-			audioDescription.addSSRC(audioSsrc, audioName);
+
+			const auto direction = mReceiveAudio ? rtc::Description::Direction::SendRecv
+			                                     : rtc::Description::Direction::SendOnly;
+
+			rtc::Description::Audio description(audioMid, direction);
+			description.addSSRC(audioSsrc, audioName);
 
 			switch (mAudioCodec) {
 			case AudioCodec::OPUS:
-				audioDescription.addOpusCodec(audioPayloadType);
+				description.addOpusCodec(audioPayloadType);
 				break;
 			case AudioCodec::PCMU:
-				audioDescription.addPCMUCodec(audioPayloadType);
+				description.addPCMUCodec(audioPayloadType);
 				break;
 			case AudioCodec::PCMA:
-				audioDescription.addPCMACodec(audioPayloadType);
+				description.addPCMACodec(audioPayloadType);
 				break;
 			case AudioCodec::AAC:
-				audioDescription.addAACCodec(audioPayloadType);
+				description.addAACCodec(audioPayloadType);
 				break;
 			default:
 				throw std::logic_error("Unknown audio codec");
 			}
 
-			client->audio = client->pc->addTrack(audioDescription);
+			auto track = client->pc->addTrack(std::move(description));
 
-			auto audioConfig = std::make_shared<rtc::RtpPacketizationConfig>(
+			auto packetizerConfig = std::make_shared<rtc::RtpPacketizationConfig>(
 			    audioSsrc, audioName, audioPayloadType, rtc::OpusRtpPacketizer::DefaultClockRate);
-			auto audioPacketizer = std::make_shared<rtc::OpusRtpPacketizer>(audioConfig);
-			audioPacketizer->addToChain(std::make_shared<rtc::RtcpSrReporter>(audioConfig));
-			audioPacketizer->addToChain(std::make_shared<rtc::RtcpNackResponder>());
 
-			client->audio->setMediaHandler(audioPacketizer);
+			if (mAudioCodec == AudioCodec::PCMU || mAudioCodec == AudioCodec::PCMA)
+				track->chainMediaHandler(
+				    std::make_shared<rtc::AudioRtpPacketizer<8000>>(packetizerConfig));
+			else
+				track->chainMediaHandler(
+				    std::make_shared<rtc::AudioRtpPacketizer<48000>>(packetizerConfig));
+
+			track->chainMediaHandler(std::make_shared<rtc::RtcpSrReporter>(packetizerConfig));
+			track->chainMediaHandler(std::make_shared<rtc::RtcpNackResponder>());
+			if (mReceiveAudio) {
+				if (mAudioCodec == AudioCodec::PCMU || mAudioCodec == AudioCodec::PCMA)
+					track->chainMediaHandler(std::make_shared<rtc::RtpDepacketizer>(8000));
+				else
+					track->chainMediaHandler(std::make_shared<rtc::RtpDepacketizer>(48000));
+
+				std::lock_guard lock(mDecoderCallbackMutex);
+				auto decoder = mAudioDecoderCallback ? mAudioDecoderCallback(id) : nullptr;
+
+				track->onFrame([decoder](binary data, rtc::FrameInfo info) {
+					if(decoder)
+						decoder->push(data.data(), data.size(), info.timestamp);
+				});
+			}
+
+			client->audio = std::move(track);
 		}
 
 		client->pc->setLocalDescription();

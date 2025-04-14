@@ -6,7 +6,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-#include "audioencoder.hpp"
+#include "audiodecoder.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -21,11 +21,8 @@ static void free_buffer_shared_ptr(void *opaque, [[maybe_unused]] uint8_t *data)
 }
 }
 
-AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
-    : Encoder(std::move(codecName)), mEndpoint(std::move(endpoint)) {
-
-	av_opt_set(mCodecContext->priv_data, "preset", "ultrafast", 0);
-	av_opt_set(mCodecContext->priv_data, "tune", "zerolatency", 0);
+AudioDecoder::AudioDecoder(string codecName)
+    : Decoder(std::move(codecName)) {
 
 	Endpoint::AudioCodec endpointCodec;
 	switch (mCodec->id) {
@@ -57,20 +54,16 @@ AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
 		throw std::runtime_error("Unsupported audio codec");
 	}
 
-	mEndpoint->setAudio(endpointCodec);
-
 	mAudioFifo = unique_ptr_deleter<AVAudioFifo>(
 	    av_audio_fifo_alloc(mCodecContext->sample_fmt, mCodecContext->ch_layout.nb_channels,
 	                        mCodecContext->sample_rate),
 	    av_audio_fifo_free);
-
-	// Defaults
-	setBitrate(128000);
 }
 
-AudioEncoder::~AudioEncoder() { stop(); }
+AudioDecoder::~AudioDecoder() { stop(); }
 
-void AudioEncoder::push(shared_ptr<AVFrame> frame) {
+/*
+void AudioDecoder::push(shared_ptr<AVFrame> frame) {
 	auto frameSampleFormat = static_cast<AVSampleFormat>(frame->format);
 	if (!mSwrContext || mSwrInputSampleFormat != frameSampleFormat ||
 	    mSwrInputNbChannels != frame->ch_layout.nb_channels ||
@@ -137,16 +130,16 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 		if (ret < 0)
 			throw std::runtime_error("Failed to read samples from audio FIFO buffer");
 
-		Encoder::push(std::move(frame));
+		Decoder::push(std::move(frame));
 	}
 }
 
-void AudioEncoder::push(InputFrame input) {
+void AudioDecoder::push(InputFrame input) {
 	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
 
-	frame->pts = 0; // ignored
+	frame->pts = input.ts.count();
 	frame->format = input.format;
 	frame->sample_rate = input.sampleRate;
 	frame->nb_samples = input.nbSamples;
@@ -164,7 +157,7 @@ void AudioEncoder::push(InputFrame input) {
 	frame->buf[0] =
 	    av_buffer_create(reinterpret_cast<uint8_t *>(input.data), input.size,
 	                     free_buffer_shared_ptr, new shared_ptr<void>(finishedWrapper), 0);
-	if (!frame->buf[0])
+	if(!frame->buf[0])
 		throw std::runtime_error("Failed to create AVBuffer");
 
 	frame->data[0] = frame->buf[0]->data;
@@ -173,9 +166,14 @@ void AudioEncoder::push(InputFrame input) {
 	push(std::move(frame));
 }
 
-void AudioEncoder::output(AVPacket *packet) {
+void AudioDecoder::output(AVPacket *packet) {
 	mEndpoint->broadcastAudio(reinterpret_cast<const byte *>(packet->data), packet->size,
 	                          uint32_t(packet->pts));
+}
+*/
+
+void AudioDecoder::output(AVFrame *frame) {
+
 }
 
 } // namespace rtcast

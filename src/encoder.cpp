@@ -41,7 +41,7 @@ void Encoder::setBitrate(int64_t bitrate) {
 void Encoder::start() {
 	int ret = avcodec_open2(mCodecContext.get(), mCodec, nullptr);
 	if (ret < 0)
-		throw std::runtime_error("Failed to open video codec, ret=" + std::to_string(ret));
+		throw std::runtime_error("Failed to initialize encoder context, ret=" + std::to_string(ret));
 
 	mRunning = true;
 	mThread = std::thread(std::bind(&Encoder::run, this));
@@ -90,7 +90,7 @@ void Encoder::run() {
 			else if (ret < 0)
 				throw std::runtime_error("Error during encoding");
 
-			std::cout << "Writing packet, pts=" << packet->pts << ", size=" << packet->size
+			std::cout << "Encoded frame, pts=" << packet->pts << ", size=" << packet->size
 			          << std::endl;
 
 			lock.unlock();

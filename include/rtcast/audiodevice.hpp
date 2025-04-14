@@ -31,8 +31,6 @@ public:
 	void stop();
 
 private:
-	static std::once_flag OnceFlag;
-
 	void run();
 
 	shared_ptr<AudioEncoder> mEncoder;

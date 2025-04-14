@@ -7,23 +7,30 @@ project(rtcast
 set(SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/endpoint.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/encoder.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/decoder.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/videoencoder.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/drmvideoencoder.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/videodevice.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/cameradevice.cpp
 	${CMAKE_CURRENT_SOURCE_DIR}/src/audioencoder.cpp
-	${CMAKE_CURRENT_SOURCE_DIR}/src/audiodevice.cpp)
+	${CMAKE_CURRENT_SOURCE_DIR}/src/audiodevice.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/audiodecoder.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/src/audioplayer.cpp)
 
 set(HEADERS
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/common.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/endpoint.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/encoder.hpp
+	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/decoder.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/videoencoder.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/drmvideoencoder.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/videodevice.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/cameradevice.hpp
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audioencoder.hpp
-	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audiodevice.hpp)
+	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audiodevice.hpp
+	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audiodecoder.hpp
+	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audiosink.hpp
+	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audioplayer.hpp)
 
 set(CLI_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp)
@@ -68,6 +75,7 @@ set(AV_LIBRARIES
 
 find_package(PkgConfig)
 pkg_check_modules(LIBCAMERA IMPORTED_TARGET libcamera)
+pkg_check_modules(LIBAO IMPORTED_TARGET ao)
 
 add_library(rtcast ${SOURCES} ${HEADERS})
 set_target_properties(rtcast PROPERTIES
@@ -88,7 +96,12 @@ target_link_libraries(rtcast PRIVATE
 if(LIBCAMERA_FOUND)
 	target_include_directories(rtcast PRIVATE ${LIBCAMERA_INCLUDE_DIRS})
 	target_link_libraries(rtcast PRIVATE ${LIBCAMERA_LINK_LIBRARIES})
-	target_compile_definitions(rtcast PUBLIC RTCAST_HAS_LIBCAMERA)
+	target_compile_definitions(rtcast PUBLIC RTCAST_HAS_LIBCAMERA=1)
+endif()
+if(LIBAO_FOUND)
+	target_include_directories(rtcast PRIVATE ${LIBAO_INCLUDE_DIRS})
+	target_link_libraries(rtcast PRIVATE ${LIBAO_LINK_LIBRARIES})
+	target_compile_definitions(rtcast PUBLIC RTCAST_HAS_LIBAO=1)
 endif()
 add_library(LibRtCast::LibRtCast ALIAS rtcast)
 

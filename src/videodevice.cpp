@@ -13,10 +13,9 @@
 
 namespace rtcast {
 
-std::once_flag VideoDevice::OnceFlag;
-
 VideoDevice::VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder) : mEncoder(encoder) {
-	std::call_once(OnceFlag, []() { avdevice_register_all(); });
+	static std::once_flag onceFlag;
+	std::call_once(onceFlag, []() { avdevice_register_all(); });
 
 #ifdef _WIN32
 	const std::string name = "dshow";

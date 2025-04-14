@@ -29,11 +29,10 @@ public:
 	using finished_callback_t = std::function<void()>;
 
 	struct InputFrame {
-		std::chrono::microseconds ts;
-		AVSampleFormat format = AV_SAMPLE_FMT_U8;
-		int sampleRate;
-		int nbChannels;
-		int nbSamples;
+		AVSampleFormat format = AV_SAMPLE_FMT_S16;
+		int sampleRate = 48000;
+		int nbChannels = 2;
+		int nbSamples = 0;
 		void *data = nullptr;
 		size_t size = 0;
 		finished_callback_t finished;

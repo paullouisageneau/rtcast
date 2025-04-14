@@ -19,6 +19,8 @@
 #include "videoencoder.hpp"
 
 // Audio
+#include "audiodecoder.hpp"
 #include "audiodevice.hpp"
 #include "audioencoder.hpp"
-
+#include "audioplayer.hpp"
+#include "audiosink.hpp"

@@ -13,7 +13,8 @@
 #include <thread>
 
 using std::make_shared;
-using std::string;
+using rtcast::string;
+using rtcast::binary;
 
 int main() {
 	try {
@@ -23,7 +24,7 @@ int main() {
 
 		videoEncoder->setBitrate(4000000);
 
-#ifdef RTCAST_HAS_LIBCAMERA
+#if RTCAST_HAS_LIBCAMERA
 		rtcast::CameraDevice video("default", videoEncoder);
 		video.start();
 #else
@@ -33,9 +34,18 @@ int main() {
 		rtcast::AudioDevice audio("default", audioEncoder);
 		audio.start();
 
-		endpoint->onMessage([](int id, string message) {
+		endpoint->receiveMessage([](int id, string message) {
 			std::cout << "Message from " << id << ": " << message << std::endl;
 		});
+
+#if RTCAST_HAS_LIBAO
+		endpoint->receiveAudio([]([[maybe_unused]] int id) {
+			auto player = std::make_shared<rtcast::AudioPlayer>("default");
+			auto decoder = std::make_shared<rtcast::AudioDecoder>("libopus", player);
+			decoder->start();
+			return decoder;
+		});
+#endif
 
 		std::this_thread::sleep_for(std::chrono::seconds::max());
 
