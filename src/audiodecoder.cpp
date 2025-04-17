@@ -45,7 +45,9 @@ AudioDecoder::AudioDecoder(string codecName, shared_ptr<AudioSink> sink)
 	mCodecContext->time_base = AVRational{1, mCodecContext->sample_rate};
 }
 
-AudioDecoder::~AudioDecoder() {}
+AudioDecoder::~AudioDecoder() {
+	stop();
+}
 
 void AudioDecoder::output(AVFrame *frame) {
 	int bytesPerSample = av_get_bytes_per_sample(static_cast<AVSampleFormat>(frame->format));
