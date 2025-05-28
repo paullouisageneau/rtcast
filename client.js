@@ -148,9 +148,29 @@ function setupControl() {
   };
 }
 
+gamepad = null;
+gamepadx = 0;
+gamepady = 0;
+
+function checkGamepad() {
+  if (!gamepad) {
+    gamepadx = 0;
+    gamepady = 0;
+    updateControl();
+    return;
+  }
+
+  threshold = 0.1;
+  gamepadx = Math.abs(gamepad.axes[0]) >= threshold ? gamepad.axes[0] : 0;
+  gamepady = Math.abs(gamepad.axes[1]) >= threshold ? gamepad.axes[1] : 0;
+
+  updateControl();
+  setTimeout(checkGamepad, 100);
+}
+
 function updateControl() {
-  let left  = 0.0;
-  let right = 0.0;
+  let left  = - gamepady + gamepadx;
+  let right = - gamepady - gamepadx;
 
   if (controls['up']) {
     left += 1.0;
@@ -184,6 +204,22 @@ function updateControl() {
     dc.send(JSON.stringify(message));
 }
 
-setupControl();
-connect(url);
+window.addEventListener('gamepadconnected', function(e) {
+  console.log(`Gamepad: ${e.gamepad.id}`);
+  gamepad = e.gamepad;
+  window.requestAnimationFrame(checkGamepad);
+});
+
+window.addEventListener('gamepaddisconnected', function(e) {
+  if (e.gamepad.index == gamepad.index) {
+    console.log("Gamepad disconnected");
+    gamepad = null;
+  }
+});
+
+
+window.onload = (evt) => {
+  setupControl();
+  connect(url);
+};
 
