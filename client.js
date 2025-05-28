@@ -1,6 +1,6 @@
 
-const url = 'ws://127.0.0.1:8888/';
-const sendAudio = false;
+const url = 'ws://10.9.0.205:8888/';
+const sendAudio = true;
 
 let ws = null;
 let pc = null;
@@ -94,5 +94,96 @@ async function connect(url) {
   };
 }
 
+let controls = {};
+
+function setupControl() {
+  const directions = ['up', 'down', 'left', 'right'];
+  const keyCodes = [38, 40, 37, 39];
+
+  let arrows = {}; // TODO
+
+  for (dir in directions) {
+    if (arrows[dir]) {
+	    arrows[dir].onmousedown = (evt) => {
+		    evt.preventDefault();
+        if(!controls[dir]) {
+          controls[dir] = true;
+          updateControl();
+        }
+      };
+
+      arrows[dir].onmouseup = (evt) => {
+        evt.preventDefault();
+        controls[dir] = false;
+        updateControl();
+      };
+    }
+
+	  if('ontouchstart' in document.documentElement) {
+      arrows[dir].ontouchstart = arrows[dir].onmousedown;
+      arrows[dir].ontouchend = arrows[dir].onmouseup;
+	  }
+  }
+
+  document.onkeydown = (evt) => {
+    const i = keyCodes.indexOf(evt.keyCode);
+    if (i >= 0) {
+      evt.preventDefault();
+	    dir = directions[i];
+      if(!controls[dir]) {
+        controls[dir] = true;
+        updateControl();
+      }
+    }
+  };
+
+  document.onkeyup = (evt) => {
+    const i = keyCodes.indexOf(evt.keyCode);
+    if (i >= 0) {
+	    evt.preventDefault();
+      dir = directions[i];
+	    controls[dir] = false;
+	    updateControl();
+    }
+  };
+}
+
+function updateControl() {
+  let left  = 0.0;
+  let right = 0.0;
+
+  if (controls['up']) {
+    left += 1.0;
+    right+= 1.0;
+  }
+  if(controls['down']) {
+    left += -1.0;
+    right+= -1.0;
+  }
+  if(controls['left']) {
+    left = Math.min(left  - 1.0, 0);
+    right= Math.max(right + 1.0, 0);
+  }
+  if(controls['right']) {
+    left = Math.max(left  + 1.0, 0);
+    right= Math.min(right - 1.0, 0);
+  }
+
+  const power = 100.0;
+  left  = Math.round(Math.min(Math.max(left,  -1), 1)*power);
+  right = Math.round(Math.min(Math.max(right, -1), 1)*power);
+
+  const message = {
+    control: {
+      left: left,
+      right: right
+    }
+  };
+
+  if (dc)
+    dc.send(JSON.stringify(message));
+}
+
+setupControl();
 connect(url);
 

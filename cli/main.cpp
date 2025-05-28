@@ -7,19 +7,22 @@
  */
 
 #include "rtcast/rtcast.hpp"
+#include "nlohmann/json.hpp"
+
+#include "serial.hpp"
 
 #include <chrono>
 #include <iostream>
 #include <thread>
 
 using std::make_shared;
-using rtcast::string;
-using rtcast::binary;
+using std::string;
+using nlohmann::json;
 
 int main() {
 	try {
 		auto endpoint = make_shared<rtcast::Endpoint>(8888);
-		auto videoEncoder = make_shared<rtcast::VideoEncoder>("libx264", endpoint);
+		auto videoEncoder = make_shared<rtcast::DrmVideoEncoder>("h264_v4l2m2m", endpoint);
 		auto audioEncoder = make_shared<rtcast::AudioEncoder>("libopus", endpoint);
 
 		videoEncoder->setBitrate(4000000);
@@ -31,12 +34,8 @@ int main() {
 		rtcast::VideoDevice video("default", videoEncoder);
 		video.start();
 #endif
-		rtcast::AudioDevice audio("default", audioEncoder);
+		rtcast::AudioDevice audio("default:1", audioEncoder);
 		audio.start();
-
-		endpoint->receiveMessage([](int id, string message) {
-			std::cout << "Message from " << id << ": " << message << std::endl;
-		});
 
 #if RTCAST_HAS_LIBAO
 		endpoint->receiveAudio([]([[maybe_unused]] int id) {
@@ -46,6 +45,20 @@ int main() {
 			return decoder;
 		});
 #endif
+
+		auto serial = std::make_shared<Serial>("/dev/ttyAMA0", 9600);
+
+		endpoint->receiveMessage([serial](int id, string data) {
+			std::cout << "Message from " << id << ": " << data << std::endl;
+			json message = json::parse(data);
+			if(auto control = message["control"]; control.is_object()) {
+				auto left = control["left"].get<int>();
+				auto right = control["right"].get<int>();
+				serial->write("L" + std::to_string(left) + "\n");
+				serial->write("R" + std::to_string(right) + "\n");
+				serial->write("C\n");
+			}
+		});
 
 		std::this_thread::sleep_for(std::chrono::seconds::max());
 
