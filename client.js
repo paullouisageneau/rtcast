@@ -26,7 +26,11 @@ async function connect(url) {
 
     pc = new RTCPeerConnection(config);
 
-    pc.oniceconnectionstatechange = () => console.log(`Connection state: ${pc.iceConnectionState}`);
+    pc.oniceconnectionstatechange = () => {
+        console.log(`Connection state: ${pc.iceConnectionState}`);
+        if (pc.iceConnectionState == 'failed')
+            alert('Connection failed.');
+    };
     pc.onicegatheringstatechange = () => console.log(`Gathering state: ${pc.iceGatheringState}`);
     pc.onsignalingstatechange = () => console.log(`Signaling state: ${pc.signalingState}`);
 
@@ -91,6 +95,10 @@ async function connect(url) {
         sdpMid: mid,
       });
     }
+  };
+
+  ws.onerror = (evt) => {
+    alert('Telebot is offline.');
   };
 }
 
