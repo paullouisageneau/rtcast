@@ -87,8 +87,8 @@ CameraDevice::CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder)
 	auto &streamConfig = mConfig->at(0);
 	std::cout << "Default configuration is: " << streamConfig.toString() << std::endl;
 
-	// streamConfig.size.width = 1280;
-	// streamConfig.size.height = 720;
+	streamConfig.size.width = 1920;
+	streamConfig.size.height = 1080;
 
 	if (mConfig->validate() == libcamera::CameraConfiguration::Invalid)
 		throw std::runtime_error("Failed to validate configuration");

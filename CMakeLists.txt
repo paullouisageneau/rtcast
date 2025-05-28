@@ -33,7 +33,11 @@ set(HEADERS
 	${CMAKE_CURRENT_SOURCE_DIR}/include/rtcast/audioplayer.hpp)
 
 set(CLI_SOURCES
-	${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp)
+	${CMAKE_CURRENT_SOURCE_DIR}/cli/main.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/cli/serial.cpp)
+
+set(CLI_HEADERS
+	${CMAKE_CURRENT_SOURCE_DIR}/cli/serial.hpp)
 
 add_subdirectory(deps/libdatachannel EXCLUDE_FROM_ALL)
 
@@ -91,7 +95,8 @@ target_include_directories(rtcast PUBLIC
 target_link_libraries(rtcast PRIVATE
 	LibDataChannel::LibDataChannel
 	Threads::Threads
-	${AV_LIBRARIES}
+	${AV_LIBRARIES})
+target_link_libraries(rtcast PUBLIC
 	nlohmann_json) # from libdatachannel examples
 if(LIBCAMERA_FOUND)
 	target_include_directories(rtcast PRIVATE ${LIBCAMERA_INCLUDE_DIRS})
@@ -105,7 +110,7 @@ if(LIBAO_FOUND)
 endif()
 add_library(LibRtCast::LibRtCast ALIAS rtcast)
 
-add_executable(rtcast-cli ${CLI_SOURCES})
+add_executable(rtcast-cli ${CLI_SOURCES} ${CLI_HEADERS})
 set_target_properties(rtcast-cli PROPERTIES
 	VERSION ${PROJECT_VERSION}
     CXX_STANDARD 17
