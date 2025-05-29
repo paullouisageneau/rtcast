@@ -129,6 +129,10 @@ void Endpoint::receiveAudio(audio_decoder_callback callback) {
 	mReceiveAudio = mAudioDecoderCallback != nullptr;
 }
 
+unsigned int Endpoint::clientsCount() const {
+	return static_cast<unsigned int>(mClients.size());
+}
+
 int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 	int id = mNextClientId++;
 	auto client = std::make_shared<Client>();

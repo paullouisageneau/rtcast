@@ -65,6 +65,8 @@ public:
 	using audio_decoder_callback = std::function<shared_ptr<AudioDecoder>(int id)>;
 	void receiveAudio(audio_decoder_callback callback);
 
+	unsigned int clientsCount() const;
+
 private:
 	int connect(shared_ptr<rtc::WebSocket> ws);
 	void remove(int id);

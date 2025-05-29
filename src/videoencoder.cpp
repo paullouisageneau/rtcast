@@ -104,6 +104,9 @@ void VideoEncoder::setColorSettings(ColorSettings settings) {
 }
 
 void VideoEncoder::push(shared_ptr<AVFrame> frame) {
+	if(mEndpoint->clientsCount() == 0)
+		return; // no clients, no need to encode
+
 	// MJPEG may output deprecated pixel formats
 	switch (static_cast<AVPixelFormat>(frame->format)) {
 	case AV_PIX_FMT_YUVJ420P:
@@ -170,6 +173,9 @@ void VideoEncoder::push(shared_ptr<AVFrame> frame) {
 void VideoEncoder::push(InputFrame input) {
 	if (input.planes.empty())
 		throw std::logic_error("Input frame has no planes");
+
+	if(mEndpoint->clientsCount() == 0)
+		return; // no clients, no need to encode
 
 	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)

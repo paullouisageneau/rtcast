@@ -71,6 +71,9 @@ AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
 AudioEncoder::~AudioEncoder() { stop(); }
 
 void AudioEncoder::push(shared_ptr<AVFrame> frame) {
+	if(mEndpoint->clientsCount() == 0)
+		return; // no clients, no need to encode
+
 	auto frameSampleFormat = static_cast<AVSampleFormat>(frame->format);
 	if (!mSwrContext || mSwrInputSampleFormat != frameSampleFormat ||
 	    mSwrInputNbChannels != frame->ch_layout.nb_channels ||
@@ -142,6 +145,9 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 }
 
 void AudioEncoder::push(InputFrame input) {
+	if(mEndpoint->clientsCount() == 0)
+		return; // no clients, no need to encode
+
 	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
 		throw std::runtime_error("Failed to allocate AVFrame");
