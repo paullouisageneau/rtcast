@@ -31,7 +31,7 @@ async function connect(url) {
     pc.onsignalingstatechange = () => console.log(`Signaling state: ${pc.signalingState}`);
 
     pc.onicecandidate = (evt) => {
-      if (!evt.candate)
+      if (!evt.candidate)
         return;
 
       const { candidate, sdpMid } = evt.candidate;
