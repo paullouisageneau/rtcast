@@ -1,5 +1,5 @@
 
-const url = 'ws://10.9.0.205:8888/';
+const url = 'ws://telebot.local:8888/';
 const sendAudio = true;
 
 let ws = null;
@@ -9,9 +9,14 @@ let dc = null;
 async function connect(url) {
   let stream = null;
   if (sendAudio) {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-    });
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+    } catch(err) {
+      console.error(err);
+      scrteem = null;
+    }
   }
 
   ws = new WebSocket(url);
@@ -112,8 +117,8 @@ function setupControl() {
 
   for (dir in directions) {
     if (arrows[dir]) {
-	    arrows[dir].onmousedown = (evt) => {
-		    evt.preventDefault();
+      arrows[dir].onmousedown = (evt) => {
+        evt.preventDefault();
         if(!controls[dir]) {
           controls[dir] = true;
           updateControl();
@@ -125,19 +130,19 @@ function setupControl() {
         controls[dir] = false;
         updateControl();
       };
-    }
 
-	  if('ontouchstart' in document.documentElement) {
-      arrows[dir].ontouchstart = arrows[dir].onmousedown;
-      arrows[dir].ontouchend = arrows[dir].onmouseup;
-	  }
+      if('ontouchstart' in document.documentElement) {
+        arrows[dir].ontouchstart = arrows[dir].onmousedown;
+        arrows[dir].ontouchend = arrows[dir].onmouseup;
+      }
+    }
   }
 
   document.onkeydown = (evt) => {
     const i = keyCodes.indexOf(evt.keyCode);
     if (i >= 0) {
       evt.preventDefault();
-	    dir = directions[i];
+      dir = directions[i];
       if(!controls[dir]) {
         controls[dir] = true;
         updateControl();
@@ -148,10 +153,10 @@ function setupControl() {
   document.onkeyup = (evt) => {
     const i = keyCodes.indexOf(evt.keyCode);
     if (i >= 0) {
-	    evt.preventDefault();
+      evt.preventDefault();
       dir = directions[i];
-	    controls[dir] = false;
-	    updateControl();
+      controls[dir] = false;
+      updateControl();
     }
   };
 }
@@ -225,8 +230,9 @@ window.addEventListener('gamepaddisconnected', function(e) {
   }
 });
 
-
 window.onload = (evt) => {
+  const video = document.getElementById('video');
+  video.onclick = (evt) => video.requestFullscreen();
   setupControl();
   connect(url);
 };
