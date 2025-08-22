@@ -13,12 +13,15 @@
 
 namespace rtcast {
 
+const int DefaultFrameSizeMs = 20;
+
 extern "C" {
 
 static void free_buffer_shared_ptr(void *opaque, [[maybe_unused]] uint8_t *data) {
 	auto ptr = reinterpret_cast<shared_ptr<void> *>(opaque);
 	delete ptr;
 }
+
 }
 
 AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
@@ -34,24 +37,26 @@ AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
 		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_STEREO;
 		mCodecContext->sample_fmt = AV_SAMPLE_FMT_S16;
 		mCodecContext->sample_rate = 48000;
-		break;
-	case AV_CODEC_ID_PCM_MULAW:
-		endpointCodec = Endpoint::AudioCodec::PCMU;
-		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_MONO;
-		mCodecContext->sample_fmt = AV_SAMPLE_FMT_U8;
-		mCodecContext->sample_rate = 8000;
-		break;
-	case AV_CODEC_ID_PCM_ALAW:
-		endpointCodec = Endpoint::AudioCodec::PCMA;
-		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_MONO;
-		mCodecContext->sample_fmt = AV_SAMPLE_FMT_U8;
-		mCodecContext->sample_rate = 8000;
+		setBitrate(128000); // default
 		break;
 	case AV_CODEC_ID_AAC:
 		endpointCodec = Endpoint::AudioCodec::AAC;
 		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_STEREO;
 		mCodecContext->sample_fmt = AV_SAMPLE_FMT_S16;
 		mCodecContext->sample_rate = 48000;
+		setBitrate(128000); // default
+		break;
+	case AV_CODEC_ID_PCM_MULAW:
+		endpointCodec = Endpoint::AudioCodec::PCMU;
+		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_MONO;
+		mCodecContext->sample_fmt = AV_SAMPLE_FMT_S16;
+		mCodecContext->sample_rate = 8000;
+		break;
+	case AV_CODEC_ID_PCM_ALAW:
+		endpointCodec = Endpoint::AudioCodec::PCMA;
+		mCodecContext->ch_layout = AV_CHANNEL_LAYOUT_MONO;
+		mCodecContext->sample_fmt = AV_SAMPLE_FMT_S16;
+		mCodecContext->sample_rate = 8000;
 		break;
 	default:
 		throw std::runtime_error("Unsupported audio codec");
@@ -63,9 +68,6 @@ AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
 	    av_audio_fifo_alloc(mCodecContext->sample_fmt, mCodecContext->ch_layout.nb_channels,
 	                        mCodecContext->sample_rate),
 	    av_audio_fifo_free);
-
-	// Defaults
-	setBitrate(128000);
 }
 
 AudioEncoder::~AudioEncoder() { stop(); }
@@ -121,22 +123,24 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 		throw;
 	}
 
-	while (av_audio_fifo_size(mAudioFifo.get()) >= mCodecContext->frame_size) {
+	// If the codec is variable frame size, use the default one
+	int frame_size = mCodecContext->frame_size > 0 ? mCodecContext->frame_size : mCodecContext->sample_rate * DefaultFrameSizeMs / 1000;
+
+	while (av_audio_fifo_size(mAudioFifo.get()) >= frame_size) {
 		auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 		frame->format = mCodecContext->sample_fmt;
 		frame->ch_layout = mCodecContext->ch_layout;
 		frame->sample_rate = mCodecContext->sample_rate;
-		frame->nb_samples = mCodecContext->frame_size;
+		frame->nb_samples = frame_size;
 		frame->time_base = AVRational{1, mCodecContext->sample_rate};
 		frame->pts = mSamplesCount;
-		mSamplesCount += mCodecContext->frame_size;
+		mSamplesCount += frame_size;
 
 		ret = av_frame_get_buffer(frame.get(), 0);
 		if (ret < 0)
 			throw std::runtime_error("Failed to allocate buffer for frame");
 
-		ret = av_audio_fifo_read(mAudioFifo.get(), reinterpret_cast<void **>(frame->data),
-		                         mCodecContext->frame_size);
+		ret = av_audio_fifo_read(mAudioFifo.get(), reinterpret_cast<void **>(frame->data), frame_size);
 		if (ret < 0)
 			throw std::runtime_error("Failed to read samples from audio FIFO buffer");
 
