@@ -78,8 +78,7 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 
 	auto frameSampleFormat = static_cast<AVSampleFormat>(frame->format);
 	if (!mSwrContext || mSwrInputSampleFormat != frameSampleFormat ||
-	    mSwrInputNbChannels != frame->ch_layout.nb_channels ||
-	    mSwrInputSampleRate != frame->sample_rate) {
+	    mSwrInputNbChannels != frame->ch_layout.nb_channels) {
 		SwrContext *swrContext = nullptr;
 		if (swr_alloc_set_opts2(&swrContext, &mCodecContext->ch_layout, mCodecContext->sample_fmt,
 		                        mCodecContext->sample_rate, &frame->ch_layout, frameSampleFormat,
@@ -94,7 +93,6 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 
 		mSwrInputSampleFormat = frameSampleFormat;
 		mSwrInputNbChannels = frame->ch_layout.nb_channels;
-		mSwrInputSampleRate = frame->sample_rate;
 	}
 
 	uint8_t **samples = nullptr;

@@ -51,7 +51,6 @@ private:
 	unique_ptr_deleter<SwrContext> mSwrContext;
 	AVSampleFormat mSwrInputSampleFormat;
 	int mSwrInputNbChannels;
-	int mSwrInputSampleRate;
 	std::int64_t mSamplesCount = 0;
 };
 
