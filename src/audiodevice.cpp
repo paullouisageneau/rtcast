@@ -30,7 +30,8 @@ AudioDevice::AudioDevice(string deviceName, shared_ptr<AudioEncoder> encoder) : 
 		throw std::runtime_error("Failed to find input format: " + name);
 
 	AVDictionary *options = NULL;
-	av_dict_set(&options, "sample_rate", "48000", 0); // TODO
+	av_dict_set(&options, "sample_rate", std::to_string(mEncoder->sampleRate()).c_str(), 0);
+	av_dict_set(&options, "channels", std::to_string(mEncoder->channelsCount()).c_str(), 0);
 
 	AVFormatContext *formatContext = nullptr;
 	if (avformat_open_input(&formatContext, deviceName.c_str(), inputFormat, &options) < 0)

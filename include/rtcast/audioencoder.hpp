@@ -26,6 +26,9 @@ public:
 	AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint);
 	virtual ~AudioEncoder();
 
+	int sampleRate() const;
+	int channelsCount() const;
+
 	using finished_callback_t = std::function<void()>;
 
 	struct InputFrame {

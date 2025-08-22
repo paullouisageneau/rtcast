@@ -72,9 +72,21 @@ AudioEncoder::AudioEncoder(string codecName, shared_ptr<Endpoint> endpoint)
 
 AudioEncoder::~AudioEncoder() { stop(); }
 
+int AudioEncoder::sampleRate() const {
+	return mCodecContext->sample_rate;
+}
+
+int AudioEncoder::channelsCount() const {
+	return mCodecContext->ch_layout.nb_channels;
+}
+
 void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 	if(mEndpoint->clientsCount() == 0)
 		return; // no clients, no need to encode
+
+	// TODO: implement sample rate conversion if needed
+	if (frame->sample_rate != mCodecContext->sample_rate)
+		throw std::runtime_error("Audio sample rate does not match codec");
 
 	auto frameSampleFormat = static_cast<AVSampleFormat>(frame->format);
 	if (!mSwrContext || mSwrInputSampleFormat != frameSampleFormat ||
