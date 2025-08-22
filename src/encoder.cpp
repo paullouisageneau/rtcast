@@ -13,6 +13,8 @@
 
 namespace rtcast {
 
+const int MaxFrameQueueSize = 10;
+
 Encoder::Encoder(string codecName) : mCodecName(std::move(codecName)) {
 
 	// av_log_set_level(AV_LOG_VERBOSE);
@@ -56,6 +58,10 @@ void Encoder::stop() {
 
 void Encoder::push(shared_ptr<AVFrame> frame) {
 	std::unique_lock<std::mutex> lock(mMutex);
+	if (mFrameQueue.size() >= MaxFrameQueueSize) {
+        std::cout << "Dropping frame (queue is full), pts=" << frame->pts << std::endl;
+        return;
+    }
 	mFrameQueue.emplace(std::move(frame));
 	mCondition.notify_all();
 }

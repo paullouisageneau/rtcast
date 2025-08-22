@@ -64,9 +64,9 @@ public:
 protected:
 	void output(AVPacket *packet) override;
 
-private:
 	shared_ptr<Endpoint> mEndpoint;
 
+private:
 	unique_ptr_deleter<SwsContext> mSwsContext;
 	int mSwsInputWidth;
 	int mSwsInputHeight;

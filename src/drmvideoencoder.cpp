@@ -38,6 +38,14 @@ DrmVideoEncoder::~DrmVideoEncoder() {}
 void DrmVideoEncoder::push(shared_ptr<AVFrame> frame) { VideoEncoder::push(std::move(frame)); }
 
 void DrmVideoEncoder::push(InputFrame input) {
+	if(mEndpoint->clientsCount() == 0) {
+		// no clients, no need to encode
+		if (input.finished)
+			input.finished();
+
+		return;
+	}
+
 	if (input.planes.empty())
 		throw std::logic_error("Input frame has no planes");
 

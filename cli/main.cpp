@@ -12,6 +12,8 @@
 #include <iostream>
 #include <thread>
 
+using namespace std::chrono_literals;
+
 using std::make_shared;
 using rtcast::string;
 using rtcast::binary;
@@ -47,7 +49,9 @@ int main() {
 		});
 #endif
 
-		std::this_thread::sleep_for(std::chrono::seconds::max());
+		while (true) {
+			std::this_thread::sleep_for(10s);
+		}
 
 	} catch (const std::exception &e) {
 		std::cerr << e.what() << std::endl;
