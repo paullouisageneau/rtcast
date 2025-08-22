@@ -149,8 +149,13 @@ void AudioEncoder::push(shared_ptr<AVFrame> frame) {
 }
 
 void AudioEncoder::push(InputFrame input) {
-	if(mEndpoint->clientsCount() == 0)
-		return; // no clients, no need to encode
+	if(mEndpoint->clientsCount() == 0) {
+		// no clients, no need to encode
+		if (input.finished)
+			input.finished();
+
+		return;
+	}
 
 	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)

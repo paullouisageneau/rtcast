@@ -171,11 +171,16 @@ void VideoEncoder::push(shared_ptr<AVFrame> frame) {
 }
 
 void VideoEncoder::push(InputFrame input) {
+	if(mEndpoint->clientsCount() == 0) {
+		// no clients, no need to encode
+		if (input.finished)
+			input.finished();
+
+		return;
+	}
+
 	if (input.planes.empty())
 		throw std::logic_error("Input frame has no planes");
-
-	if(mEndpoint->clientsCount() == 0)
-		return; // no clients, no need to encode
 
 	auto frame = shared_ptr<AVFrame>(av_frame_alloc(), [](AVFrame *p) { av_frame_free(&p); });
 	if (!frame)
