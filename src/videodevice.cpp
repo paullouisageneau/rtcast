@@ -13,7 +13,8 @@
 
 namespace rtcast {
 
-VideoDevice::VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder) : mEncoder(encoder) {
+VideoDevice::VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder, Settings settings)
+    : mEncoder(encoder), mSettings(std::move(settings)) {
 	static std::once_flag onceFlag;
 	std::call_once(onceFlag, []() { avdevice_register_all(); });
 
@@ -30,8 +31,13 @@ VideoDevice::VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder) : 
 		throw std::runtime_error("Failed to find input format:" + name);
 
 	AVDictionary *options = NULL;
-	// av_dict_set(&options, "video_size", "1280x720", 0);
-	// av_dict_set(&options, "framerate", "30", 0);
+	if (mSettings.width > 0 && mSettings.height > 0) {
+		string size = std::to_string(mSettings.width) + "x" + std::to_string(mSettings.height);
+		av_dict_set(&options, "video_size", size.c_str(), 0);
+	}
+	if (mSettings.framerate > 0) {
+		av_dict_set(&options, "framerate", std::to_string(mSettings.framerate).c_str(), 0);
+	}
 
 	AVFormatContext *formatContext = nullptr;
 	if (avformat_open_input(&formatContext, deviceName.c_str(), inputFormat, &options) < 0)

@@ -52,8 +52,8 @@ shared_ptr<AVPacket> make_packet(int fd, size_t len) {
 std::once_flag CameraDevice::OnceFlag;
 std::unique_ptr<libcamera::CameraManager> CameraDevice::CameraManager;
 
-CameraDevice::CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder)
-    : mEncoder(encoder) {
+CameraDevice::CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder, Settings settings)
+    : mEncoder(encoder), mSettings(std::move(settings)) {
 	std::call_once(OnceFlag, []() {
 		CameraManager = std::make_unique<libcamera::CameraManager>();
 		CameraManager->start();
@@ -87,8 +87,11 @@ CameraDevice::CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder)
 	auto &streamConfig = mConfig->at(0);
 	std::cout << "Default configuration is: " << streamConfig.toString() << std::endl;
 
-	// streamConfig.size.width = 1280;
-	// streamConfig.size.height = 720;
+	if (mSettings.width > 0)
+		streamConfig.size.width = mSettings.width;
+
+	if (mSettings.height > 0)
+		streamConfig.size.height = mSettings.height;
 
 	if (mConfig->validate() == libcamera::CameraConfiguration::Invalid)
 		throw std::runtime_error("Failed to validate configuration");
@@ -221,7 +224,16 @@ void CameraDevice::initInputCodec(AVCodecID codecId) {
 
 void CameraDevice::start() {
 	mEncoder->start();
-	mCamera->start();
+
+	libcamera::ControlList controls;
+	if (mSettings.framerate > 0) {
+		const int frameDuration = 1000000 / mSettings.framerate;
+		controls.set(libcamera::controls::FrameDurationLimits,
+		             libcamera::Span<const std::int64_t, 2>({frameDuration, frameDuration}));
+	}
+
+	mCamera->start(&controls);
+
 	for (std::unique_ptr<libcamera::Request> &request : mRequests)
 		mCamera->queueRequest(request.get());
 }

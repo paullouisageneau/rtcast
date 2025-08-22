@@ -40,7 +40,15 @@ namespace rtcast {
 
 class CameraDevice final {
 public:
-	CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder);
+	struct Settings {
+		static Settings Default() { return {}; }
+		int width = 0;
+		int height = 0;
+		int framerate = 0;
+	};
+
+	CameraDevice(string deviceName, shared_ptr<VideoEncoder> encoder,
+	             Settings settings = Settings::Default());
 	~CameraDevice();
 
 	void initInputCodec(AVCodecID codecId);
@@ -73,6 +81,7 @@ private:
 	void requestComplete(libcamera::Request *request);
 
 	shared_ptr<VideoEncoder> mEncoder;
+	Settings mSettings;
 
 	shared_ptr<libcamera::Camera> mCamera;
 	unique_ptr<libcamera::CameraConfiguration> mConfig;

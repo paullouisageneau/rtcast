@@ -24,7 +24,15 @@ namespace rtcast {
 
 class VideoDevice {
 public:
-	VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder);
+	struct Settings {
+		static Settings Default() { return {}; }
+		int width = 0;
+		int height = 0;
+		int framerate = 0;
+	};
+
+	VideoDevice(string deviceName, shared_ptr<VideoEncoder> encoder,
+	            Settings settings = Settings::Default());
 	virtual ~VideoDevice();
 
 	void start();
@@ -34,6 +42,7 @@ private:
 	void run();
 
 	shared_ptr<VideoEncoder> mEncoder;
+	Settings mSettings;
 
 	unique_ptr_deleter<AVFormatContext> mFormatContext;
 	std::thread mThread;
