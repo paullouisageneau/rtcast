@@ -69,7 +69,7 @@ AudioDevice::AudioDevice(string deviceName, shared_ptr<AudioEncoder> encoder) : 
 	mInputCodecContext->time_base = mInputStream->time_base;
 }
 
-AudioDevice::~AudioDevice() {}
+AudioDevice::~AudioDevice() { stop(); }
 
 void AudioDevice::start() {
 	if (avcodec_open2(mInputCodecContext.get(), mInputCodec, NULL) < 0)
