@@ -225,7 +225,7 @@ int Endpoint::connect(shared_ptr<rtc::WebSocket> ws) {
 				break;
 			case VideoCodec::VP8:
 				description.addVP8Codec(videoPayloadType);
-				throw std::logic_error("VP8 packetizer not implemented");
+				packetizer = std::make_shared<rtc::VP8RtpPacketizer>(packetizerConfig);
 				break;
 			case VideoCodec::VP9:
 				description.addVP9Codec(videoPayloadType);
