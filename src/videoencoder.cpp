@@ -52,8 +52,8 @@ VideoEncoder::VideoEncoder(string codecName, std::shared_ptr<Endpoint> endpoint)
 	switch (mCodec->id) {
 	case AV_CODEC_ID_H264:
 		endpointCodec = Endpoint::VideoCodec::H264;
-		mCodecContext->profile = FF_PROFILE_H264_CONSTRAINED_BASELINE;
-		mCodecContext->level = FF_LEVEL_UNKNOWN;
+		mCodecContext->profile = AV_PROFILE_H264_CONSTRAINED_BASELINE;
+		mCodecContext->level = AV_LEVEL_UNKNOWN;
 		av_opt_set(mCodecContext->priv_data, "profile", "baseline", 0);
 		av_opt_set(mCodecContext->priv_data, "x264opts", "no-scenecut", 0);
 		break;
